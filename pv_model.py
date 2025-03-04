@@ -80,18 +80,18 @@ def model_pv_power(
         row_height_center=pd.NA,
         row_pitch=pd.NA,
         collector_width=pd.NA,
-        bifacial=False, # not currently included
-        bifaciality=0.8, # not currently included
+        bifacial=False,
+        bifaciality=0.8,
         surface_tilt_timeseries=pd.Series([], dtype='float64'),
         surface_azimuth_timeseries=pd.Series([], dtype='float64'),
         use_measured_poa=False,
         use_measured_temp_module=False,
         cell_type='crystalline',
-        eta_inv_nom = 0.98,
-        cross_axis_slope = 0,
+        eta_inv_nom=0.98,
+        cross_axis_slope=0,
         gcr_backtrack_setting=pd.NA,
-        programmed_gcr_am = pd.NA,
-        programmed_gcr_pm = pd.NA,
+        programmed_gcr_am=pd.NA,
+        programmed_gcr_pm=pd.NA,
         slope_aware_backtracking=True,
         **kwargs,
 ):
@@ -142,20 +142,20 @@ def model_pv_power(
     if pd.isna(programmed_gcr_pm):
         programmed_gcr_pm = gcr_backtrack_setting
     if backtrack_fraction==0:
-        backtrack=False # switch to truetracking to avoid divide by zero 
+        backtrack = False  # switch to truetracking to avoid divide by zero 
     
     # geometry
     if pd.isna(axis_tilt):
-        axis_tilt=0
+        axis_tilt = 0
     if pd.isna(row_side_num_mods):
-        row_side_num_mods = 1 # default if no value provided
+        row_side_num_mods = 1  # default if no value provided
     if pd.isna(row_height_center):
-        row_height_center = 1 # default if no value provided
+        row_height_center = 1  # default if no value provided
     
     # gcr = collector_width / row_pitch, gcr is a required input, so users can define 1 of the other 2.
     # If all 3 are defined, check to make sure relationship is correct.
-    if pd.isna(collector_width) & pd.isna(row_pitch): # neither provided, assume default
-        collector_width = 2 # default if no value provided
+    if pd.isna(collector_width) & pd.isna(row_pitch):  # neither provided, assume default
+        collector_width = 2  # default if no value provided
         row_pitch = collector_width / gcr
     elif pd.isna(row_pitch):
         row_pitch = collector_width / gcr
@@ -180,7 +180,7 @@ def model_pv_power(
     if surface_tilt_timeseries.empty | surface_azimuth_timeseries.empty:
         if mount_type == 'single-axis':
             # modify tracker gcr if needed
-            if backtrack==True:
+            if backtrack is True:
                 programmed_gcr = np.where(solar_position.azimuth < 180,
                                           programmed_gcr_am*backtrack_fraction,
                                           programmed_gcr_pm*backtrack_fraction)
@@ -188,47 +188,62 @@ def model_pv_power(
                 programmed_gcr = gcr_backtrack_setting
         
             # change cross_axis_slope used for tracker orientation if needed
-            if slope_aware_backtracking==True:
+            if slope_aware_backtracking is True:
                 programmed_cross_axis_slope = cross_axis_slope
             else:
                 programmed_cross_axis_slope = 0
 
             # tracker orientation
-            tr = pvlib.tracking.singleaxis(solar_position.apparent_zenith, 
-                                        solar_position.azimuth,
-                                        gcr=programmed_gcr,
-                                        axis_tilt=axis_tilt,
-                                        axis_azimuth=axis_azimuth, 
-                                        cross_axis_tilt=programmed_cross_axis_slope,
-                                        max_angle=max_tracker_angle,
-                                        backtrack=backtrack)
+            tr = pvlib.tracking.singleaxis(
+                solar_position.apparent_zenith, 
+                solar_position.azimuth,
+                gcr=programmed_gcr,
+                axis_tilt=axis_tilt,
+                axis_azimuth=axis_azimuth, 
+                cross_axis_tilt=programmed_cross_axis_slope,
+                max_angle=max_tracker_angle,
+                backtrack=backtrack)
 
             # calculate shading with slope
-            fs_array = pvlib.shading.shaded_fraction1d(solar_position.apparent_zenith, 
-                                                solar_position.azimuth,
-                                                axis_azimuth=axis_azimuth,
-                                                shaded_row_rotation=tr.tracker_theta,
-                                                collector_width=collector_width, pitch=pitch,
-                                                axis_tilt=axis_tilt,
-                                                cross_axis_slope=cross_axis_slope)
+            fs_array = pvlib.shading.shaded_fraction1d(
+                solar_position.apparent_zenith,
+                solar_position.azimuth,
+                axis_azimuth=axis_azimuth,
+                shaded_row_rotation=tr.tracker_theta,
+                collector_width=collector_width, pitch=pitch,
+                axis_tilt=axis_tilt,
+                cross_axis_slope=cross_axis_slope)
             
             surface_tilt = tr.surface_tilt.fillna(0)
             surface_azimuth = tr.surface_azimuth.fillna(0)
         elif mount_type == 'fixed':
             # calculate shading
             # model fixed array as a stuck tracker for azimuth and rotation
-            fs_array = pvlib.shading.shaded_fraction1d(solar_position.apparent_zenith,
-                                                solar_position.azimuth,
-                                                axis_azimuth=fixed_azimuth - 90, 
-                                                shaded_row_rotation=fixed_tilt,
-                                                collector_width=collector_width, pitch=pitch,
-                                                axis_tilt=axis_tilt,
-                                                cross_axis_slope=cross_axis_slope)
+            fs_array = pvlib.shading.shaded_fraction1d(
+                solar_position.apparent_zenith,
+                solar_position.azimuth,
+                axis_azimuth=fixed_azimuth - 90,
+                shaded_row_rotation=fixed_tilt,
+                collector_width=collector_width, pitch=pitch,
+                axis_tilt=axis_tilt,
+                cross_axis_slope=cross_axis_slope
+                )
             surface_tilt = float(fixed_tilt)
             surface_azimuth = float(fixed_azimuth)
     else:
         surface_tilt = surface_tilt_timeseries
         surface_azimuth = surface_azimuth_timeseries
+        # calculate tracker theta, TODO: double-check this
+        tracker_theta = surface_tilt.where((surface_azimuth >= 180), -surface_tilt)
+
+        fs_array = pvlib.shading.shaded_fraction1d(
+            solar_position.apparent_zenith,
+            solar_position.azimuth,
+            axis_azimuth=axis_azimuth,
+            shaded_row_rotation=tracker_theta,
+            collector_width=collector_width, pitch=pitch,
+            axis_tilt=axis_tilt,
+            cross_axis_slope=cross_axis_slope)
     
     # dni
     dni_extra = pvlib.irradiance.get_extra_radiation(resource_data.index)
@@ -249,7 +264,7 @@ def model_pv_power(
         dhi=resource_data.dhi,
         dni_extra=dni_extra,
         albedo=resource_data.albedo,
-        model = default_site_transposition_model,
+        model=default_site_transposition_model,
     )
 
     # set the "effective" number of modules on the side of each row
@@ -275,8 +290,8 @@ def model_pv_power(
 
     # iam
     aoi = pvlib.irradiance.aoi(surface_tilt, surface_azimuth,
-                            solar_position.apparent_zenith,
-                            solar_position.azimuth)
+                               solar_position.apparent_zenith,
+                               solar_position.azimuth)
     # iam = pvlib.iam.physical(aoi, L=0.0032, n_ar=1.29)
     # iam = pvlib.iam.physical(aoi, L=0.0032)
     iam = pvlib.iam.physical(aoi)
@@ -333,7 +348,7 @@ def model_pv_power(
             resource_data.wind_speed).values
             for n in range(eff_row_side_num_mods)])
     
-    if use_measured_temp_module==True:
+    if use_measured_temp_module is True:
         t_cell = resource_data.temp_module
     else:
         t_cell = t_cell_modeled
@@ -343,7 +358,7 @@ def model_pv_power(
     # adjust irradiance based on modeled shade loss
     poa_effective = (1 - shade_loss) * poa_total_without_direct_shade.values
 
-    if bifacial==True:
+    if bifacial is True:
         # transposition models allowed for infinite_sheds:
         if default_site_transposition_model not in ['haydavies','isotropic']:
             print('pvlib.bifacial.infinite_sheds does not currently accept the ' + 
@@ -355,20 +370,20 @@ def model_pv_power(
         
         # run infinite_sheds to get rear irradiance
         irrad_inf_sh = pvlib.bifacial.infinite_sheds.get_irradiance(
-            surface_tilt = surface_tilt, 
-            surface_azimuth = surface_azimuth,
-            solar_zenith = solar_position.apparent_zenith, 
-            solar_azimuth = solar_position.azimuth,
-            gcr = gcr, 
-            height = row_height_center,
-            pitch = row_pitch,
-            ghi = resource_data.ghi,
-            dhi = resource_data.dhi,
-            dni = resource_data.dni,
-            albedo = resource_data.albedo,
-            model = inf_sheds_transposition_model,
-            dni_extra = dni_extra,
-            bifaciality = bifaciality,
+            surface_tilt=surface_tilt,
+            surface_azimuth=surface_azimuth,
+            solar_zenith=solar_position.apparent_zenith,
+            solar_azimuth=solar_position.azimuth,
+            gcr=gcr,
+            height=row_height_center,
+            pitch=row_pitch,
+            ghi=resource_data.ghi,
+            dhi=resource_data.dhi,
+            dni=resource_data.dni,
+            albedo=resource_data.albedo,
+            model=inf_sheds_transposition_model,
+            dni_extra=dni_extra,
+            bifaciality=bifaciality,
         )
 
         # now for the rear irradiance
@@ -396,10 +411,10 @@ def model_pv_power(
     pdc_shaded = pvlib.pvsystem.pvwatts_dc(
         poa_effective, t_cell, nameplate_dc, gamma_pdc)
     
-    pdc_inv = pdc_shaded * (1 - dc_loss_fraction) # dc power into the inverter after losses
+    pdc_inv = pdc_shaded * (1 - dc_loss_fraction)  # dc power into the inverter after losses
 
     # inverter dc input is ac nameplate divided by nominal inverter efficiency
-    pdc0 = nameplate_ac/eta_inv_nom 
+    pdc0 = nameplate_ac/eta_inv_nom
 
     # average the dc power across n positions up the row
     pdc_inv_total = pd.DataFrame(pdc_inv.T, index=times).mean(axis=1)
