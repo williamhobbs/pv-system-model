@@ -59,7 +59,7 @@ def non_linear_shade(n_cells_up, fs, fd):
 def model_pv_power(
         resource_data,
         latitude,
-        longitude, 
+        longitude,
         mount_type,
         gcr,
         nameplate_dc,
@@ -93,6 +93,7 @@ def model_pv_power(
         programmed_gcr_am=pd.NA,
         programmed_gcr_pm=pd.NA,
         slope_aware_backtracking=True,
+        programmed_cross_axis_slope=pd.NA,
         **kwargs,
 ):
     """
@@ -142,8 +143,19 @@ def model_pv_power(
     if pd.isna(programmed_gcr_pm):
         programmed_gcr_pm = gcr_backtrack_setting
     if backtrack_fraction==0:
-        backtrack = False  # switch to truetracking to avoid divide by zero 
-    
+        backtrack = False  # switch to truetracking to avoid divide by zero
+
+    # slope-aware backtracking settings
+    if (slope_aware_backtracking is True) & (pd.isna(programmed_cross_axis_slope)):
+        programmed_cross_axis_slope = cross_axis_slope
+    elif (slope_aware_backtracking is False) & (pd.isna(programmed_cross_axis_slope)):
+        programmed_cross_axis_slope = 0
+    elif (slope_aware_backtracking is False) & (pd.notna(programmed_cross_axis_slope)):
+        slope_aware_backtracking = True
+        print("""You provided a value for programmed_cross_axis_slope
+        AND did not set slope_aware_backtracking=True. Slope-aware 
+        backtracking will be enabled.""")
+
     # geometry
     if pd.isna(axis_tilt):
         axis_tilt = 0
@@ -188,18 +200,18 @@ def model_pv_power(
                 programmed_gcr = gcr_backtrack_setting
         
             # change cross_axis_slope used for tracker orientation if needed
-            if slope_aware_backtracking is True:
-                programmed_cross_axis_slope = cross_axis_slope
-            else:
-                programmed_cross_axis_slope = 0
+            # if slope_aware_backtracking is True:
+            #     programmed_cross_axis_slope = cross_axis_slope
+            # else:
+            #     programmed_cross_axis_slope = 0
 
             # tracker orientation
             tr = pvlib.tracking.singleaxis(
-                solar_position.apparent_zenith, 
+                solar_position.apparent_zenith,
                 solar_position.azimuth,
                 gcr=programmed_gcr,
                 axis_tilt=axis_tilt,
-                axis_azimuth=axis_azimuth, 
+                axis_azimuth=axis_azimuth,
                 cross_axis_tilt=programmed_cross_axis_slope,
                 max_angle=max_tracker_angle,
                 backtrack=backtrack)
@@ -286,7 +298,7 @@ def model_pv_power(
     # poa_direct_unshaded = total_irrad.poa_direct / (1-fs_array)
     # !!! get_total_irradiance doesn't include shade like infinite_sheds,
     # so no correction needed!!!
-    poa_direct_unshaded = total_irrad.poa_direct 
+    poa_direct_unshaded = total_irrad.poa_direct
 
     # iam
     aoi = pvlib.irradiance.aoi(surface_tilt, surface_azimuth,
@@ -333,7 +345,7 @@ def model_pv_power(
     # diffuse fraction
     fd = total_irrad.poa_diffuse.values / poa_total_without_direct_shade.values
     
-        # calculate shade loss for each course/string
+    # calculate shade loss for each course/string
     if shade_loss_model == 'linear':
         shade_loss = fs * (1 - fd)
     elif shade_loss_model == 'non-linear_simple' or shade_loss_model == 'non-linear_simple_twin_module':
@@ -426,4 +438,5 @@ def model_pv_power(
     # ac power with PVWatts inverter model
     power_ac = pvlib.inverter.pvwatts(pdc_inv_total, pdc0, eta_inv_nom)
 
-    return power_ac, resource_data
+    # return power_ac, resource_data
+    return power_ac, surface_tilt
