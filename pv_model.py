@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pvlib
 
+
 # from https://github.com/williamhobbs/2024_pvpmc_self_shade
 def shade_fractions(fs_array, eff_row_side_num_mods):
     """
@@ -23,6 +24,7 @@ def shade_fractions(fs_array, eff_row_side_num_mods):
         fs_array * eff_row_side_num_mods - course 
         for course in range(eff_row_side_num_mods)], 0, 1)
     return fs_course
+
 
 # from https://github.com/williamhobbs/2024_pvpmc_self_shade
 def non_linear_shade(n_cells_up, fs, fd):
@@ -54,6 +56,7 @@ def non_linear_shade(n_cells_up, fs, fd):
     pnorm = np.where(fs < 1/n_cells_up, 1 - (1 - fd)*fs*n_cells_up, fd)
     shade_loss = 1 - pnorm
     return shade_loss
+
 
 # Partially based on https://github.com/williamhobbs/2024_pvpmc_self_shade/tree/iam_and_spectrum
 def model_pv_power(
@@ -142,7 +145,7 @@ def model_pv_power(
         programmed_gcr_am = gcr_backtrack_setting 
     if pd.isna(programmed_gcr_pm):
         programmed_gcr_pm = gcr_backtrack_setting
-    if backtrack_fraction==0:
+    if backtrack_fraction == 0:
         backtrack = False  # switch to truetracking to avoid divide by zero
 
     # slope-aware backtracking settings
@@ -163,7 +166,7 @@ def model_pv_power(
         row_side_num_mods = 1  # default if no value provided
     if pd.isna(row_height_center):
         row_height_center = 1  # default if no value provided
-    
+
     # gcr = collector_width / row_pitch, gcr is a required input, so users can define 1 of the other 2.
     # If all 3 are defined, check to make sure relationship is correct.
     if pd.isna(collector_width) & pd.isna(row_pitch):  # neither provided, assume default
@@ -179,7 +182,7 @@ def model_pv_power(
             Please check these values. Note that gcr is required, and only one
             of collector_width and row_pitch are needed to fully define the
             related geometry.""")
-    
+
     # time and solar position with correct time
     times = resource_data.index
     loc = pvlib.location.Location(latitude=latitude, longitude=longitude, tz=times.tz)
@@ -198,7 +201,7 @@ def model_pv_power(
                                           programmed_gcr_pm*backtrack_fraction)
             else:
                 programmed_gcr = gcr_backtrack_setting
-        
+
             # change cross_axis_slope used for tracker orientation if needed
             # if slope_aware_backtracking is True:
             #     programmed_cross_axis_slope = cross_axis_slope
@@ -225,7 +228,7 @@ def model_pv_power(
                 collector_width=collector_width, pitch=pitch,
                 axis_tilt=axis_tilt,
                 cross_axis_slope=cross_axis_slope)
-            
+
             surface_tilt = tr.surface_tilt.fillna(0)
             surface_azimuth = tr.surface_azimuth.fillna(0)
         elif mount_type == 'fixed':
@@ -246,7 +249,7 @@ def model_pv_power(
         surface_tilt = surface_tilt_timeseries
         surface_azimuth = surface_azimuth_timeseries
         # calculate tracker theta, TODO: double-check this
-        tracker_theta = surface_tilt.where((surface_azimuth >= 180), -surface_tilt)
+        tracker_theta = surface_tilt.where((surface_azimuth >= 180), - surface_tilt)
 
         fs_array = pvlib.shading.shaded_fraction1d(
             solar_position.apparent_zenith,
@@ -256,7 +259,7 @@ def model_pv_power(
             collector_width=collector_width, pitch=pitch,
             axis_tilt=axis_tilt,
             cross_axis_slope=cross_axis_slope)
-    
+
     # dni
     dni_extra = pvlib.irradiance.get_extra_radiation(resource_data.index)
 
@@ -264,7 +267,7 @@ def model_pv_power(
         print('calculating dhi')
         # calculate DHI with "complete sum" AKA "closure" equation: DHI = GHI - DNI * cos(zenith)
         resource_data['dhi'] = resource_data.ghi - resource_data.dni * pvlib.tools.cosd(solar_position.zenith)
-    
+
     # total irradiance
     total_irrad = pvlib.irradiance.get_total_irradiance(
         surface_tilt=surface_tilt,
@@ -332,7 +335,7 @@ def model_pv_power(
     # set zero POA to nan to avoid divide by zero warnings
     # this might not be needed!!!
     resource_data['poa_modeled']=resource_data['poa_modeled'].replace(0, np.nan)
-    
+
     if use_measured_poa==True:
         poa_total_without_direct_shade = resource_data.poa
     else:
@@ -344,7 +347,7 @@ def model_pv_power(
     poa_total_with_direct_shade = ((1-fs) * poa_direct_unshaded.values) + total_irrad.poa_diffuse.values
     # diffuse fraction
     fd = total_irrad.poa_diffuse.values / poa_total_without_direct_shade.values
-    
+
     # calculate shade loss for each course/string
     if shade_loss_model == 'linear':
         shade_loss = fs * (1 - fd)
@@ -359,7 +362,7 @@ def model_pv_power(
             resource_data.temp_air,
             resource_data.wind_speed).values
             for n in range(eff_row_side_num_mods)])
-    
+
     if use_measured_temp_module is True:
         t_cell = resource_data.temp_module
     else:
@@ -379,7 +382,7 @@ def model_pv_power(
             inf_sheds_transposition_model = 'haydavies'
         else:
             inf_sheds_transposition_model = default_site_transposition_model
-        
+
         # run infinite_sheds to get rear irradiance
         irrad_inf_sh = pvlib.bifacial.infinite_sheds.get_irradiance(
             surface_tilt=surface_tilt,
@@ -422,7 +425,7 @@ def model_pv_power(
     # PVWatts dc power
     pdc_shaded = pvlib.pvsystem.pvwatts_dc(
         poa_effective, t_cell, nameplate_dc, gamma_pdc)
-    
+
     pdc_inv = pdc_shaded * (1 - dc_loss_fraction)  # dc power into the inverter after losses
 
     # inverter dc input is ac nameplate divided by nominal inverter efficiency
@@ -438,5 +441,4 @@ def model_pv_power(
     # ac power with PVWatts inverter model
     power_ac = pvlib.inverter.pvwatts(pdc_inv_total, pdc0, eta_inv_nom)
 
-    # return power_ac, resource_data
-    return power_ac, surface_tilt
+    return power_ac, resource_data
