@@ -84,7 +84,7 @@ def model_pv_power(
         row_pitch=pd.NA,
         collector_width=pd.NA,
         bifacial=False,
-        bifaciality=0.8,
+        bifaciality_factor=0.8,
         surface_tilt_timeseries=pd.Series([], dtype='float64'),
         surface_azimuth_timeseries=pd.Series([], dtype='float64'),
         use_measured_poa=False,
@@ -97,6 +97,7 @@ def model_pv_power(
         programmed_gcr_pm=pd.NA,
         slope_aware_backtracking=True,
         programmed_cross_axis_slope=pd.NA,
+        altitude=0,
         **kwargs,
 ):
     """
@@ -189,7 +190,8 @@ def model_pv_power(
 
     # time and solar position with correct time
     times = resource_data.index
-    loc = pvlib.location.Location(latitude=latitude, longitude=longitude, tz=times.tz)
+    loc = pvlib.location.Location(latitude=latitude, longitude=longitude,
+                                  tz=times.tz, altitude=altitude)
     solar_position = loc.get_solarposition(times)
 
     # general geometry calcs
@@ -402,7 +404,7 @@ def model_pv_power(
             albedo=resource_data.albedo,
             model=inf_sheds_transposition_model,
             dni_extra=dni_extra,
-            bifaciality=bifaciality,
+            bifaciality=bifaciality_factor,
         )
 
         # now for the rear irradiance
@@ -420,8 +422,8 @@ def model_pv_power(
             # shade_loss = non_linear_shade(n_cells_up, fs, fd)
             shade_loss = non_linear_shade(n_cells_up, fs_back, fd)
 
-        # adjust irradiance based on modeled shade loss, include bifaciality
-        poa_back_effective = bifaciality * (1 - shade_loss) * poa_back_total_without_direct_shade.values
+        # adjust irradiance based on modeled shade loss, include bifaciality_factor
+        poa_back_effective = bifaciality_factor * (1 - shade_loss) * poa_back_total_without_direct_shade.values
 
         # combine front and back effective POA
         poa_effective = poa_effective + poa_back_effective
