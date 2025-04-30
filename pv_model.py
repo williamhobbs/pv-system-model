@@ -406,7 +406,7 @@ def model_pv_power(
         # transposition models allowed for infinite_sheds:
         if default_site_transposition_model not in ['haydavies', 'isotropic']:
             print('pvlib.bifacial.infinite_sheds does not currently accept'
-                  'the ' + default_site_transposition_model + ' model.')
+                  ' the ' + default_site_transposition_model + ' model.')
             print('using haydavies instead.')
             inf_sheds_transposition_model = 'haydavies'
         else:
