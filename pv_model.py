@@ -389,8 +389,8 @@ def model_pv_power(
         pvlib.temperature.faiman(
             poa_total_with_direct_shade[n],
             resource_data.temp_air,
-            resource_data.wind_speed).values 
-            for n in range(eff_row_side_num_mods)])
+            resource_data.wind_speed).values
+        for n in range(eff_row_side_num_mods)])
 
     if use_measured_temp_module is True:
         t_cell = resource_data.temp_module
@@ -440,10 +440,11 @@ def model_pv_power(
         )
         poa_back_total_without_direct_shade.replace(0, np.nan, inplace=True)
         fs_back = shade_fractions(fs_array_back, eff_row_side_num_mods)
-        poa_back_total_with_direct_shade = (
-            ((1-fs_back) * poa_back_direct_unshaded.values) +
-            irrad_inf_sh['poa_back_diffuse'].values
-        )
+        # commented out, not currently used:
+        # poa_back_total_with_direct_shade = (
+        #     ((1-fs_back) * poa_back_direct_unshaded.values) +
+        #     irrad_inf_sh['poa_back_diffuse'].values
+        # )
         fd = (irrad_inf_sh['poa_back_diffuse'].values /
               poa_back_total_without_direct_shade.values)
         if shade_loss_model == 'linear':
