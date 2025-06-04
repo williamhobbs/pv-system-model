@@ -41,7 +41,10 @@ The function returns:
 
 ## Examples
 
-See [quick_demo.ipynb](quick_demo.ipynb) and https://github.com/williamhobbs/2025-pvrw-trackers for some example uses. 
+See [quick_demo.ipynb](quick_demo.ipynb) and https://github.com/williamhobbs/2025-pvrw-trackers for some example uses. It is also used in:
+ - https://github.com/williamhobbs/energy-forecasting-tools
+ - https://github.com/williamhobbs/PVPMC_2025
+ - https://github.com/williamhobbs/PVSC-2025-daily-energy-forecaster
 
 ## References
 
