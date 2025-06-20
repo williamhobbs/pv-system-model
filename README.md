@@ -26,14 +26,22 @@ It also includes less common features that may be useful, including:
   - `infinite_sheds` is only used for the rear to allow for cross-axis slope to be included in front-side irradiance calculations, as `infinite_sheds` currently only works with flat terrain.
 - shade loss calculations for thin-film and common crystalline modules in portrait orientation
   - linear (thin-film) and non-linear (crystalline) shade losses
-  - crystalline modules can be either with older-style square cells and modern modern "twin" modules with half-cut cells
+  - crystalline modules can be either older-style modules with square cells or modern "twin" modules with half-cut cells
   - allows for multiple "courses" of modules, e.g., "2P" where modules are in portrat two-high up the racking
   - *Note: Crystalline modules in landscape are not an option currently. Anecdotally, there are vary few utility-scale fixed tilt solar projects in the US with crystalline modules in landscape orientation. I'm less certain about tracking projects with landscape crystalline, but those would likely use backtracking, in which case shade losses are not typically a focus area.*
 
 ## Inputs and outputs
 The `model_pv_power` function takes in:
 - a resource data DataFrame, similar to the format that is returned by `pvlib.iotools.get*` functions
-- many plant/system specifications (which can also be passed in as a Python dictionary) that follow conventions and definitions in https://github.com/williamhobbs/pv-plant-specifications, specifically [pv-plant-specification-rev5.csv](https://github.com/williamhobbs/pv-plant-specifications/blob/main/pv-plant-specification-rev5.csv)
+- many plant/system specifications (which can also be passed in as a Python dictionary) that follow conventions and definitions in https://github.com/williamhobbs/pv-plant-specifications, specifically [pv-plant-specification-rev6.csv](https://github.com/williamhobbs/pv-plant-specifications/blob/main/pv-plant-specification-rev6.csv)
+
+Users should make sure to select the appropriate input for `shade_loss_model`:
+- `'non-linear_simple'` for crystalline silicon modules with older-style cell stringing (typically square cells, three strings in series)
+- `'non-linear_simple_twin_module'` for crystalline silicon modules with modern stringing, two sets of parallel cell strings (typically half-cut cells)
+- `'linear'` for an module with a linear shade response (typical of thin-film like CdTe or CIGS)
+
+![image](https://github.com/user-attachments/assets/812eb4f7-d6d3-44d0-8782-45ceda1b6ce0)
+
 
 The function returns:
 - an ac power timeseries
