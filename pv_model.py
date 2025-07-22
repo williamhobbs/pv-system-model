@@ -22,7 +22,7 @@ def shade_fractions(fs_array, eff_row_side_num_mods):
     Array with the shade fraction on each course.
     """
     fs_course = np.clip([
-        fs_array * eff_row_side_num_mods - course 
+        fs_array * eff_row_side_num_mods - course
         for course in range(eff_row_side_num_mods)], 0, 1)
     return fs_course
 
@@ -137,7 +137,7 @@ def model_pv_power(
 
     References
     ----------
-    .. [1] William Hobbs, pv-plant-specification-rev4.csv, 
+    .. [1] William Hobbs, pv-plant-specification-rev4.csv,
        https://github.com/williamhobbs/pv-plant-specifications
     """
 
@@ -148,7 +148,7 @@ def model_pv_power(
     if pd.isna(gcr_backtrack_setting):
         gcr_backtrack_setting = gcr
     if pd.isna(programmed_gcr_am):
-        programmed_gcr_am = gcr_backtrack_setting 
+        programmed_gcr_am = gcr_backtrack_setting
     if pd.isna(programmed_gcr_pm):
         programmed_gcr_pm = gcr_backtrack_setting
     if backtrack_fraction == 0:
@@ -179,7 +179,7 @@ def model_pv_power(
         row_height_center = 1  # default if no value provided
     if pd.isna(max_tracker_angle):
         max_tracker_angle = 60
-    
+
     # gcr = collector_width / row_pitch, gcr is a required input, so users can
     # define 1 of the other 2.
     # If all 3 are defined, check to make sure relationship is correct.
@@ -284,7 +284,7 @@ def model_pv_power(
         print('calculating dhi')
         # calculate DHI with "complete sum" AKA "closure" equation:
         # DHI = GHI - DNI * cos(zenith)
-        resource_data['dhi'] = (resource_data.ghi - resource_data.dni * 
+        resource_data['dhi'] = (resource_data.ghi - resource_data.dni *
                                 pvlib.tools.cosd(solar_position.zenith))
 
     # total irradiance
@@ -312,7 +312,7 @@ def model_pv_power(
     # for linear shade loss, it really doesn't matter how many modules there
     # are on the side of each row, so just run everything once to save time
     elif shade_loss_model == 'linear':
-        eff_row_side_num_mods = 1 
+        eff_row_side_num_mods = 1
     else:
         raise ValueError("""shade_loss_model must be one of:
             'non-linear_simple', 'non-linear_simple_twin_module', or 'linear'.
@@ -339,7 +339,7 @@ def model_pv_power(
         if 'precipitable_water' not in resource_data.columns:
             if (('temp_air' in resource_data.columns) &
                ('relative_humidity' in resource_data.columns)):
-                resource_data.precipitable_water = \
+                resource_data['precipitable_water'] = \
                     pvlib.atmosphere.gueymard94_pw(
                         temp_air=resource_data.temp_air,
                         relative_humidity=resource_data.relative_humidity)
@@ -348,7 +348,7 @@ def model_pv_power(
         spectral_modifier = pvlib.spectrum.spectral_factor_firstsolar(
             precipitable_water=resource_data.precipitable_water,
             airmass_absolute=airmass.airmass_absolute,
-            module_type='cdte', 
+            module_type='cdte',
         )
         poa_direct_unshaded = poa_direct_unshaded * spectral_modifier
 
@@ -365,7 +365,7 @@ def model_pv_power(
     if use_measured_poa is True:
         poa_total_without_direct_shade = resource_data.poa
     else:
-        poa_total_without_direct_shade = resource_data['poa_modeled'] 
+        poa_total_without_direct_shade = resource_data['poa_modeled']
 
     # shaded fraction for each course/string going up the row
     fs = shade_fractions(fs_array, eff_row_side_num_mods)
