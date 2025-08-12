@@ -132,8 +132,9 @@ def model_pv_power(
     power_ac : pandas.Series
         AC power. Same units as ``dc_capacity_plant`` and
         ``power_plant_ac_max`` (ideally kW).
-    fs_array : pandas.Series
-        Shaded fraction for all courses on each row in the array.
+    resource_data : pandas.DataFrame
+        modified version of input ``resource_data`` with modeled poa, module
+        temperature, and possibly other parameters added.
 
     References
     ----------
@@ -322,7 +323,7 @@ def model_pv_power(
     # poa_direct_unshaded = total_irrad.poa_direct / (1-fs_array)
     # !!! get_total_irradiance doesn't include shade like infinite_sheds,
     # so no correction needed!!!
-    poa_direct_unshaded = total_irrad.poa_direct
+    poa_direct_unshaded = total_irrad['poa_direct']
 
     # iam
     aoi = pvlib.irradiance.aoi(surface_tilt, surface_azimuth,
@@ -371,9 +372,10 @@ def model_pv_power(
     fs = shade_fractions(fs_array, eff_row_side_num_mods)
     # total POA *with* direct shade impacts
     poa_total_with_direct_shade = ((1-fs) * poa_direct_unshaded.values) + \
-        total_irrad.poa_diffuse.values
+        total_irrad['poa_diffuse'].values
     # diffuse fraction
-    fd = total_irrad.poa_diffuse.values / poa_total_without_direct_shade.values
+    fd = total_irrad['poa_diffuse'].values / \
+        poa_total_without_direct_shade.values
 
     # calculate shade loss for each course/string
     if shade_loss_model == 'linear':
@@ -388,12 +390,16 @@ def model_pv_power(
     t_cell_modeled = np.array([
         pvlib.temperature.faiman(
             poa_total_with_direct_shade[n],
-            resource_data.temp_air,
-            resource_data.wind_speed).values
+            resource_data['temp_air'],
+            resource_data['wind_speed']).values
         for n in range(eff_row_side_num_mods)])
 
     if use_measured_temp_module is True:
-        t_cell = resource_data.temp_module
+        # use measured module temperature - repeat the single timeseries
+        # for each course in the array
+        t_cell = np.array([
+            resource_data['temp_module'].values
+            for n in range(eff_row_side_num_mods)])
     else:
         t_cell = t_cell_modeled
 
