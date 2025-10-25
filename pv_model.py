@@ -142,7 +142,10 @@ def model_pv_power(
        https://github.com/williamhobbs/pv-plant-specifications
     """
 
-    # Fill in some necessary variales with defaults if there is no value
+    # ========================================================================
+    # Inputs and Basic Geometry
+    # ========================================================================
+    # Fill in some necessary variables with defaults if there is no value
     # provided.
     # backtracking settings: default to AM/PM settings, then generic
     # programmed value, then physical gcr
@@ -199,16 +202,21 @@ def model_pv_power(
             of collector_width and row_pitch are needed to fully define the
             related geometry.""")
 
+    # general geometry calcs
+    pitch = collector_width / gcr
+
+    # ========================================================================
+    # Time and solar position
+    # ========================================================================
     # time and solar position with correct time
     times = resource_data.index
     loc = pvlib.location.Location(latitude=latitude, longitude=longitude,
                                   tz=times.tz, altitude=altitude)
     solar_position = loc.get_solarposition(times)
 
-    # general geometry calcs
-    pitch = collector_width / gcr
-
-    # surface tilt and azimuth
+    # ========================================================================
+    # Surface tilt, azimuth, and shaded fraction
+    # ========================================================================
     if surface_tilt_timeseries.empty | surface_azimuth_timeseries.empty:
         if mount_type == 'single-axis':
             # modify tracker gcr if needed
@@ -248,6 +256,7 @@ def model_pv_power(
 
             surface_tilt = tr.surface_tilt.fillna(0)
             surface_azimuth = tr.surface_azimuth.fillna(0)
+            resource_data['tracker_theta'] = tr.tracker_theta
         elif mount_type == 'fixed':
             # calculate shading
             # model fixed array as a stuck tracker for azimuth and rotation
@@ -262,6 +271,7 @@ def model_pv_power(
                 )
             surface_tilt = float(fixed_tilt)
             surface_azimuth = float(fixed_azimuth)
+            resource_data['tracker_theta'] = np.nan
     else:
         surface_tilt = surface_tilt_timeseries
         surface_azimuth = surface_azimuth_timeseries
@@ -277,16 +287,25 @@ def model_pv_power(
             collector_width=collector_width, pitch=pitch,
             axis_tilt=axis_tilt,
             cross_axis_slope=cross_axis_slope)
+        resource_data['tracker_theta'] = tracker_theta
+    resource_data['fs_array'] = fs_array
 
-    # dni
-    dni_extra = pvlib.irradiance.get_extra_radiation(resource_data.index)
+    aoi = pvlib.irradiance.aoi(surface_tilt, surface_azimuth,
+                               solar_position.apparent_zenith,
+                               solar_position.azimuth)
 
+    # ========================================================================
+    # Modeled POA
+    # ========================================================================
     if 'dhi' not in resource_data:
         print('calculating dhi')
         # calculate DHI with "complete sum" AKA "closure" equation:
         # DHI = GHI - DNI * cos(zenith)
         resource_data['dhi'] = (resource_data.ghi - resource_data.dni *
                                 pvlib.tools.cosd(solar_position.zenith))
+
+    # dni
+    dni_extra = pvlib.irradiance.get_extra_radiation(resource_data.index)
 
     # total irradiance
     total_irrad = pvlib.irradiance.get_total_irradiance(
@@ -302,37 +321,34 @@ def model_pv_power(
         model=default_site_transposition_model,
     )
 
-    # set the "effective" number of modules on the side of each row
-    if shade_loss_model == 'non-linear_simple':
-        eff_row_side_num_mods = int(row_side_num_mods)
-    elif shade_loss_model == 'non-linear_simple_twin_module':
-        # twin modules are treated as effectively two modules with half as
-        # many cells each
-        eff_row_side_num_mods = int(row_side_num_mods) * 2
-        n_cells_up = n_cells_up / 2
-    # for linear shade loss, it really doesn't matter how many modules there
-    # are on the side of each row, so just run everything once to save time
-    elif shade_loss_model == 'linear':
-        eff_row_side_num_mods = 1
+    resource_data['poa_modeled'] = total_irrad['poa_global']
+
+    # ========================================================================
+    # Handle measured POA, get diffuse and direct ready
+    # ========================================================================
+    if use_measured_poa is True:
+        poa_total_without_direct_shade = resource_data.poa
+        irrad_dirint = pvlib.irradiance.gti_dirint(
+            poa_total_without_direct_shade, aoi,
+            solar_position.apparent_zenith, solar_position.azimuth,
+            times, surface_tilt, surface_azimuth)
+        poa_direct_unshaded = irrad_dirint['dni'] # output of gti_dirint
+        poa_diffuse_unshaded = irrad_dirint['dhi'] # output of gti_dirint
     else:
-        raise ValueError("""shade_loss_model must be one of:
-            'non-linear_simple', 'non-linear_simple_twin_module', or 'linear'.
-            You entered: '""" + shade_loss_model + """'""")
+        # work backwards to unshaded direct irradiance for the array:
+        # poa_direct_unshaded = total_irrad.poa_direct / (1-fs_array)
+        # !!! get_total_irradiance doesn't include shade like infinite_sheds,
+        # so no correction needed!!!
+        poa_direct_unshaded = total_irrad['poa_direct']
+        poa_diffuse_unshaded = total_irrad['poa_diffuse']
 
-    # work backwards to unshaded direct irradiance for the array:
-    # poa_direct_unshaded = total_irrad.poa_direct / (1-fs_array)
-    # !!! get_total_irradiance doesn't include shade like infinite_sheds,
-    # so no correction needed!!!
-    poa_direct_unshaded = total_irrad['poa_direct']
-
+    # ========================================================================
+    # IAM and Spectral correction
+    # ========================================================================
     # iam
-    aoi = pvlib.irradiance.aoi(surface_tilt, surface_azimuth,
-                               solar_position.apparent_zenith,
-                               solar_position.azimuth)
     # iam = pvlib.iam.physical(aoi, L=0.0032, n_ar=1.29)
     # iam = pvlib.iam.physical(aoi, L=0.0032)
     iam = pvlib.iam.physical(aoi)
-    poa_direct_unshaded = poa_direct_unshaded * iam
 
     # spectral modifier for cdte
     if cell_type == 'thin-film_cdte':
@@ -351,31 +367,53 @@ def model_pv_power(
             airmass_absolute=airmass.airmass_absolute,
             module_type='cdte',
         )
-        poa_direct_unshaded = poa_direct_unshaded * spectral_modifier
+
+    # apply iam
+    poa_direct_unshaded = poa_direct_unshaded * iam
 
     # total poa on the front, but without direct shade impacts
     # (would be keeping diffuse impacts from infinite_sheds if we used
     # inifinite_sheds...)
-    resource_data['poa_modeled'] = (total_irrad.poa_diffuse +
-                                    poa_direct_unshaded)
+    poa_total_without_direct_shade = (poa_diffuse_unshaded +
+                                      poa_direct_unshaded)
+
+    if cell_type == 'thin-film_cdte':
+        poa_total_without_direct_shade = (poa_total_without_direct_shade *
+                                          spectral_modifier)
+
     # set zero POA to nan to avoid divide by zero warnings
     # this might not be needed!!!
-    resource_data['poa_modeled'] = \
-        resource_data['poa_modeled'].replace(0, np.nan)
+    poa_total_without_direct_shade = (
+        poa_total_without_direct_shade.replace(0, np.nan))
 
-    if use_measured_poa is True:
-        poa_total_without_direct_shade = resource_data.poa
+    # ========================================================================
+    # Shade losses
+    # ========================================================================
+    # set the "effective" number of modules on the side of each row
+    if shade_loss_model == 'non-linear_simple':
+        eff_row_side_num_mods = int(row_side_num_mods)
+    elif shade_loss_model == 'non-linear_simple_twin_module':
+        # twin modules are treated as effectively two modules with half as
+        # many cells each
+        eff_row_side_num_mods = int(row_side_num_mods) * 2
+        n_cells_up = n_cells_up / 2
+    # for linear shade loss, it really doesn't matter how many modules there
+    # are on the side of each row, so just run everything once to save time
+    elif shade_loss_model == 'linear':
+        eff_row_side_num_mods = 1
     else:
-        poa_total_without_direct_shade = resource_data['poa_modeled']
+        raise ValueError("""shade_loss_model must be one of:
+            'non-linear_simple', 'non-linear_simple_twin_module', or 'linear'.
+            You entered: '""" + shade_loss_model + """'""")
 
     # shaded fraction for each course/string going up the row
     fs = shade_fractions(fs_array, eff_row_side_num_mods)
     # total POA *with* direct shade impacts
-    poa_total_with_direct_shade = ((1-fs) * poa_direct_unshaded.values) + \
-        total_irrad['poa_diffuse'].values
+    poa_total_with_direct_shade = (((1-fs) * poa_direct_unshaded.values) +
+                                   total_irrad['poa_diffuse'].values)
     # diffuse fraction
-    fd = total_irrad['poa_diffuse'].values / \
-        poa_total_without_direct_shade.values
+    fd = (total_irrad['poa_diffuse'].values /
+          poa_total_without_direct_shade.values)
 
     # calculate shade loss for each course/string
     if shade_loss_model == 'linear':
@@ -384,6 +422,13 @@ def model_pv_power(
           shade_loss_model == 'non-linear_simple_twin_module'):
         shade_loss = non_linear_shade(n_cells_up, fs, fd)
 
+    # adjust irradiance based on modeled shade loss
+    poa_front_effective = ((1 - shade_loss) *
+                           poa_total_without_direct_shade.values)
+
+    # ========================================================================
+    # Temperature
+    # ========================================================================
     # cell temperature
     # steady state cell temperature - faiman is much faster than fuentes,
     # simpler than sapm
@@ -405,9 +450,9 @@ def model_pv_power(
 
     resource_data['t_cell_modeled'] = np.mean(t_cell_modeled, axis=0)
 
-    # adjust irradiance based on modeled shade loss
-    poa_effective = (1 - shade_loss) * poa_total_without_direct_shade.values
-
+    # ========================================================================
+    # Bifacial
+    # ========================================================================
     if bifacial is True:
         # transposition models allowed for infinite_sheds:
         if default_site_transposition_model not in ['haydavies', 'isotropic']:
@@ -467,8 +512,27 @@ def model_pv_power(
                               poa_back_total_without_direct_shade.values)
 
         # combine front and back effective POA
-        poa_effective = poa_effective + poa_back_effective
+        poa_effective = poa_front_effective + poa_back_effective
+        resource_data['poa_effective'] = (
+            pd.DataFrame(poa_effective.T, index=times).mean(axis=1))
+        resource_data['poa_front_effective'] = (
+            pd.DataFrame(poa_front_effective.T, index=times).mean(axis=1))
+        resource_data['poa_back_effective'] = (
+            pd.DataFrame(poa_back_effective.T, index=times).mean(axis=1))
+        resource_data['poa_back_modeled'] = (
+            poa_back_total_without_direct_shade.values)
+    else:
+        poa_effective = poa_front_effective
+        resource_data['poa_effective'] = (
+            pd.DataFrame(poa_effective.T, index=times).mean(axis=1))
+        resource_data['poa_front_effective'] = (
+            pd.DataFrame(poa_front_effective.T, index=times).mean(axis=1))
+        resource_data['poa_back_effective'] = np.nan
+        resource_data['poa_back_modeled'] = np.nan
 
+    # ========================================================================
+    # Power
+    # ========================================================================
     # PVWatts dc power
     pdc_shaded = pvlib.pvsystem.pvwatts_dc(
         poa_effective, t_cell, nameplate_dc, gamma_pdc)
@@ -489,4 +553,4 @@ def model_pv_power(
     # ac power with PVWatts inverter model
     power_ac = pvlib.inverter.pvwatts(pdc_inv_total, pdc0, eta_inv_nom)
 
-    return power_ac, resource_data
+    return power_ac, resource_data.copy()
