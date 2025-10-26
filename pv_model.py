@@ -439,6 +439,18 @@ def model_pv_power(
             resource_data['wind_speed']).values
         for n in range(eff_row_side_num_mods)])
 
+    # apply rolling 10-min avg if interval is less than 10 min
+    # based on https://www.epri.com/research/products/000000003002018708
+    sample_interval, samples_per_window = pvlib.tools._get_sample_intervals(
+        times=resource_data.index, win_length=10)
+    if sample_interval < 10:
+        N = samples_per_window
+        # based on https://stackoverflow.com/a/47490020/27574852
+        t_cell_modeled = np.array([
+            np.convolve(
+                t_cell_modeled[n], np.ones((N,))/N, 'same')
+            for n in range(eff_row_side_num_mods)])
+
     if use_measured_temp_module is True:
         # use measured module temperature - repeat the single timeseries
         # for each course in the array
