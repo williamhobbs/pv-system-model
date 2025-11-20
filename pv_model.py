@@ -100,6 +100,7 @@ def model_pv_power(
         slope_aware_backtracking=True,
         programmed_cross_axis_slope=pd.NA,
         altitude=0,
+        transient_cell_temp=False,
         **kwargs,
 ):
     """
@@ -126,6 +127,11 @@ def model_pv_power(
         If True, use measured back of module temperature from ``resource_data``
         (must have column name 'temp_module') in place of modeled cell
         temperature.
+    transient_cell_temp: bool, default False
+        If True, apply a 10-minute rolling average to modeled cell temperature.
+        This is to account for thermal mass of modules when intervals are less
+        than 10 minutes. Based on [2]. Note that this requires uniform,
+        monotonic time intervals.
 
     Returns
     -------
@@ -140,6 +146,9 @@ def model_pv_power(
     ----------
     .. [1] William Hobbs, pv-plant-specification-rev4.csv,
        https://github.com/williamhobbs/pv-plant-specifications
+    .. [2] EPRI, Jonathan Allen, Improved PV Plant Energy Production Prediction
+       (Phases 1 and 2), 2022.
+       https://www.epri.com/research/products/000000003002018708
     """
 
     # ========================================================================
@@ -439,17 +448,18 @@ def model_pv_power(
             resource_data['wind_speed']).values
         for n in range(eff_row_side_num_mods)])
 
-    # apply rolling 10-min avg if interval is less than 10 min
-    # based on https://www.epri.com/research/products/000000003002018708
-    sample_interval, samples_per_window = pvlib.tools._get_sample_intervals(
-        times=resource_data.index, win_length=10)
-    if sample_interval < 10:
-        N = samples_per_window
-        # based on https://stackoverflow.com/a/47490020/27574852
-        t_cell_modeled = np.array([
-            np.convolve(
-                t_cell_modeled[n], np.ones((N,))/N, 'same')
-            for n in range(eff_row_side_num_mods)])
+    if transient_cell_temp==True:
+        # apply rolling 10-min avg if interval is less than 10 min
+        # based on https://www.epri.com/research/products/000000003002018708
+        sample_int, samples_per_window = pvlib.tools._get_sample_intervals(
+            times=resource_data.index, win_length=10)
+        if sample_int < 10:
+            N = samples_per_window
+            # based on https://stackoverflow.com/a/47490020/27574852
+            t_cell_modeled = np.array([
+                np.convolve(
+                    t_cell_modeled[n], np.ones((N,))/N, 'same')
+                for n in range(eff_row_side_num_mods)])
 
     if use_measured_temp_module is True:
         # use measured module temperature - repeat the single timeseries
