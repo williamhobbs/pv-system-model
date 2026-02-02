@@ -101,6 +101,8 @@ def model_pv_power(
         programmed_cross_axis_slope=pd.NA,
         altitude=0,
         transient_cell_temp=False,
+        k=None,
+        cap_adjustment=False,
         **kwargs,
 ):
     """
@@ -252,6 +254,29 @@ def model_pv_power(
                 cross_axis_tilt=programmed_cross_axis_slope,
                 max_angle=max_tracker_angle,
                 backtrack=backtrack)
+
+            # add 'is_truetracking' and 'is_backtracking' booleans to output.
+            # See https://github.com/pvlib/pvlib-python/issues/2672
+            if backtrack:
+                tr_true = pvlib.tracking.singleaxis(
+                    solar_position.apparent_zenith,
+                    solar_position.azimuth,
+                    gcr=programmed_gcr,
+                    axis_tilt=axis_tilt,
+                    axis_azimuth=axis_azimuth,
+                    cross_axis_tilt=programmed_cross_axis_slope,
+                    max_angle=max_tracker_angle,
+                    backtrack=False)
+                is_truetr = ((tr.tracker_theta == tr_true.tracker_theta) &
+                             (tr.tracker_theta.abs() < max_tracker_angle))
+                is_backtr = ((~is_truetr) &
+                             (tr.tracker_theta.abs() < max_tracker_angle))
+                resource_data['is_truetracking'] = is_truetr
+                resource_data['is_backtracking'] = is_backtr
+            else:
+                is_truetr = (tr.tracker_theta.abs() < max_tracker_angle)
+                resource_data['is_truetracking'] = is_truetr
+                resource_data['is_backtracking'] = False
 
             # calculate shading with slope
             fs_array = pvlib.shading.shaded_fraction1d(
@@ -434,6 +459,28 @@ def model_pv_power(
     # adjust irradiance based on modeled shade loss
     poa_front_effective = ((1 - shade_loss) *
                            poa_total_without_direct_shade.values)
+
+    # ========================================================================
+    # Non-linear irradiance response
+    # ========================================================================
+    # apply Marion's correction if k is provided
+    # similar to pvlib.pvsystem.pvwatts_dc, but applied here to front side
+    # irradiance instead of dc power
+    if k is not None:
+        # rename variables
+        effective_irradiance = poa_front_effective
+
+        # calculate error adjustments
+        err_1 = k * (1 - (1 - effective_irradiance / 200)**4)
+        err_2 = k * (1000 - effective_irradiance) / (1000 - 200)
+        err = np.where(effective_irradiance <= 200, err_1, err_2)
+
+        # cap adjustment, if needed
+        if cap_adjustment:
+            err = np.where(effective_irradiance >= 1000, 0, err)
+
+        # make error adjustment
+        poa_front_effective = poa_front_effective - 1000 * err
 
     # ========================================================================
     # Temperature
