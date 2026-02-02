@@ -134,6 +134,12 @@ def model_pv_power(
         This is to account for thermal mass of modules when intervals are less
         than 10 minutes. Based on [2]. Note that this requires uniform,
         monotonic time intervals.
+    k: numeric, optional
+        Irradiance correction factor, defined in [3]_. Typically positive.
+        See pvlib.pvsystem.pvwatt_dc. [unitless]
+    cap_adjustment: Boolean, default False
+        If True, only apply the optional adjustment at and below 1000 Wm⁻².
+        See pvlib.pvsystem.pvwatt_dc.
 
     Returns
     -------
@@ -151,6 +157,11 @@ def model_pv_power(
     .. [2] EPRI, Jonathan Allen, Improved PV Plant Energy Production Prediction
        (Phases 1 and 2), 2022.
        https://www.epri.com/research/products/000000003002018708
+    .. [3] B. Marion, "Comparison of Predictive Models for Photovoltaic
+       Module Performance," In Proc. 33rd IEEE Photovoltaic Specialists
+       Conference (PVSC), San Diego, CA, USA, 2008, pp. 1-6,
+       :doi:`10.1109/PVSC.2008.4922586`.
+       Pre-print: https://docs.nrel.gov/docs/fy08osti/42511.pdf
     """
 
     # ========================================================================
