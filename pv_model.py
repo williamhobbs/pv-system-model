@@ -411,8 +411,8 @@ def model_pv_power(
             poa_total_without_direct_shade, aoi,
             solar_position.apparent_zenith, solar_position.azimuth,
             times, surface_tilt, surface_azimuth)
-        poa_direct_unshaded = irrad_dirint['dni'] # output of gti_dirint
-        poa_diffuse_unshaded = irrad_dirint['dhi'] # output of gti_dirint
+        poa_direct_unshaded = irrad_dirint['dni']  # output of gti_dirint
+        poa_diffuse_unshaded = irrad_dirint['dhi']  # output of gti_dirint
     else:
         # work backwards to unshaded direct irradiance for the array:
         # poa_direct_unshaded = total_irrad.poa_direct / (1-fs_array)
@@ -663,6 +663,9 @@ def model_pv_power(
     # fill nan with zero
     pdc_inv_total.fillna(0, inplace=True)
     resource_data.fillna(0, inplace=True)
+
+    # add dc power to output
+    resource_data['pdc'] = pdc_inv_total
 
     # ac power with PVWatts inverter model
     power_ac = pvlib.inverter.pvwatts(pdc_inv_total, pdc0, eta_inv_nom)
