@@ -103,6 +103,7 @@ def model_pv_power(
         transient_cell_temp=False,
         k=None,
         cap_adjustment=False,
+        horizon_profile=None,
         **kwargs,
 ):
     """
@@ -140,6 +141,9 @@ def model_pv_power(
     cap_adjustment: Boolean, default False
         If True, only apply the optional adjustment at and below 1000 Wm⁻².
         See pvlib.pvsystem.pvwatt_dc.
+    horizon_profile: pandas.Series, optional
+        Horizon elevation angles, with index of horizon azimuth angles,
+        consistent with 'data' output from pvlib.iotools.get_pvgis_horizon.
 
     Returns
     -------
@@ -167,6 +171,9 @@ def model_pv_power(
     # ========================================================================
     # Inputs and Basic Geometry
     # ========================================================================
+    # make a copy to avoid mutability issues
+    resource_data = resource_data.copy()
+
     # Fill in some necessary variables with defaults if there is no value
     # provided.
     # backtracking settings: default to AM/PM settings, then generic
@@ -340,7 +347,7 @@ def model_pv_power(
                                solar_position.azimuth)
 
     # ========================================================================
-    # Modeled POA
+    # DHI
     # ========================================================================
     if 'dhi' not in resource_data:
         print('calculating dhi')
@@ -349,6 +356,33 @@ def model_pv_power(
         resource_data['dhi'] = (resource_data.ghi - resource_data.dni *
                                 pvlib.tools.cosd(solar_position.zenith))
 
+    # ========================================================================
+    # Horizon shade
+    # ========================================================================
+    # based on https://pvlib-python.readthedocs.io/en/v0.15.0/gallery/shading/plot_simple_irradiance_adjustment_for_horizon_shading.html
+    if horizon_profile is not None:
+        # interpolate horizon profile at each azimuth
+        horizon_elevation_data = np.interp(solar_position.azimuth,
+                                           horizon_profile.index,
+                                           horizon_profile
+                                           )
+        # convert back to a series
+        horizon_elevation_data = pd.Series(horizon_elevation_data, times)
+        # set dni to zero when the sun is below the horizon profile
+        dni_adjusted = np.where((solar_position.elevation >
+                                 horizon_elevation_data),
+                                 resource_data['dni'], 0)
+        # set ghi to be equal to dhi when the sun is below the horizon profile
+        ghi_adjusted = np.where(dni_adjusted == 0,
+                                resource_data['dhi'],
+                                resource_data['ghi'])
+        # write new dhi and ghi values to the resource_data dataframe
+        resource_data['dni'] = dni_adjusted
+        resource_data['ghi'] = ghi_adjusted
+
+    # ========================================================================
+    # Modeled POA
+    # ========================================================================
     # dni
     dni_extra = pvlib.irradiance.get_extra_radiation(resource_data.index)
 
@@ -377,8 +411,8 @@ def model_pv_power(
             poa_total_without_direct_shade, aoi,
             solar_position.apparent_zenith, solar_position.azimuth,
             times, surface_tilt, surface_azimuth)
-        poa_direct_unshaded = irrad_dirint['dni'] # output of gti_dirint
-        poa_diffuse_unshaded = irrad_dirint['dhi'] # output of gti_dirint
+        poa_direct_unshaded = irrad_dirint['dni']  # output of gti_dirint
+        poa_diffuse_unshaded = irrad_dirint['dhi']  # output of gti_dirint
     else:
         # work backwards to unshaded direct irradiance for the array:
         # poa_direct_unshaded = total_irrad.poa_direct / (1-fs_array)
@@ -506,7 +540,7 @@ def model_pv_power(
             resource_data['wind_speed']).values
         for n in range(eff_row_side_num_mods)])
 
-    if transient_cell_temp==True:
+    if transient_cell_temp is True:
         # apply rolling 10-min avg if interval is less than 10 min
         # based on https://www.epri.com/research/products/000000003002018708
         sample_int, samples_per_window = pvlib.tools._get_sample_intervals(
@@ -629,6 +663,9 @@ def model_pv_power(
     # fill nan with zero
     pdc_inv_total.fillna(0, inplace=True)
     resource_data.fillna(0, inplace=True)
+
+    # add dc power to output
+    resource_data['pdc'] = pdc_inv_total
 
     # ac power with PVWatts inverter model
     power_ac = pvlib.inverter.pvwatts(pdc_inv_total, pdc0, eta_inv_nom)
