@@ -491,8 +491,7 @@ def model_pv_power(
     poa_total_with_direct_shade = (((1-fs) * poa_direct_unshaded.values) +
                                    total_irrad['poa_diffuse'].values)
     # diffuse fraction
-    fd = (total_irrad['poa_diffuse'].values /
-          poa_total_without_direct_shade.values)
+    fd = (total_irrad['poa_diffuse'] / total_irrad['poa_global']).values
 
     # calculate shade loss for each course/string
     if shade_loss_model == 'linear':
