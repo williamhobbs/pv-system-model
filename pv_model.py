@@ -244,28 +244,22 @@ def model_pv_power(
     solar_position = loc.get_solarposition(times)
 
     # ========================================================================
-    # Surface tilt, azimuth, and shaded fraction
+    # Surface tilt and azimuth
     # ========================================================================
     if surface_tilt_timeseries.empty | surface_azimuth_timeseries.empty:
         if mount_type == 'single-axis':
             # modify tracker gcr if needed
             if backtrack is True:
-                programmed_gcr = np.where(solar_position.azimuth < 180,
+                programmed_gcr = np.where(solar_position['azimuth'] < 180,
                                           programmed_gcr_am*backtrack_fraction,
                                           programmed_gcr_pm*backtrack_fraction)
             else:
                 programmed_gcr = gcr_backtrack_setting
 
-            # change cross_axis_slope used for tracker orientation if needed
-            # if slope_aware_backtracking is True:
-            #     programmed_cross_axis_slope = cross_axis_slope
-            # else:
-            #     programmed_cross_axis_slope = 0
-
             # tracker orientation
             tr = pvlib.tracking.singleaxis(
-                solar_position.apparent_zenith,
-                solar_position.azimuth,
+                solar_position['apparent_zenith'],
+                solar_position['azimuth'],
                 gcr=programmed_gcr,
                 axis_tilt=axis_tilt,
                 axis_azimuth=axis_azimuth,
@@ -277,50 +271,30 @@ def model_pv_power(
             # See https://github.com/pvlib/pvlib-python/issues/2672
             if backtrack:
                 tr_true = pvlib.tracking.singleaxis(
-                    solar_position.apparent_zenith,
-                    solar_position.azimuth,
+                    solar_position['apparent_zenith'],
+                    solar_position['azimuth'],
                     gcr=programmed_gcr,
                     axis_tilt=axis_tilt,
                     axis_azimuth=axis_azimuth,
                     cross_axis_tilt=programmed_cross_axis_slope,
                     max_angle=max_tracker_angle,
                     backtrack=False)
-                is_truetr = ((tr.tracker_theta == tr_true.tracker_theta) &
-                             (tr.tracker_theta.abs() < max_tracker_angle))
+                is_truetr = ((tr['tracker_theta'] == tr_true['tracker_theta']) &
+                             (tr['tracker_theta'].abs() < max_tracker_angle))
                 is_backtr = ((~is_truetr) &
-                             (tr.tracker_theta.abs() < max_tracker_angle))
+                             (tr['tracker_theta'].abs() < max_tracker_angle))
                 resource_data['is_truetracking'] = is_truetr
                 resource_data['is_backtracking'] = is_backtr
             else:
-                is_truetr = (tr.tracker_theta.abs() < max_tracker_angle)
+                is_truetr = (tr['tracker_theta'].abs() < max_tracker_angle)
                 resource_data['is_truetracking'] = is_truetr
                 resource_data['is_backtracking'] = False
 
-            # calculate shading with slope
-            fs_array = pvlib.shading.shaded_fraction1d(
-                solar_position.apparent_zenith,
-                solar_position.azimuth,
-                axis_azimuth=axis_azimuth,
-                shaded_row_rotation=tr.tracker_theta,
-                collector_width=collector_width, pitch=pitch,
-                axis_tilt=axis_tilt,
-                cross_axis_slope=cross_axis_slope)
-
-            surface_tilt = tr.surface_tilt.fillna(0)
-            surface_azimuth = tr.surface_azimuth.fillna(0)
-            resource_data['tracker_theta'] = tr.tracker_theta
+            surface_tilt = tr['surface_tilt'].fillna(0)
+            surface_azimuth = tr['surface_azimuth'].fillna(0)
+            resource_data['tracker_theta'] = tr['tracker_theta']
         elif mount_type == 'fixed':
-            # calculate shading
             # model fixed array as a stuck tracker for azimuth and rotation
-            fs_array = pvlib.shading.shaded_fraction1d(
-                solar_position.apparent_zenith,
-                solar_position.azimuth,
-                axis_azimuth=fixed_azimuth - 90,
-                shaded_row_rotation=fixed_tilt,
-                collector_width=collector_width, pitch=pitch,
-                axis_tilt=axis_tilt,
-                cross_axis_slope=cross_axis_slope
-                )
             surface_tilt = float(fixed_tilt)
             surface_azimuth = float(fixed_azimuth)
             resource_data['tracker_theta'] = np.nan
@@ -331,20 +305,11 @@ def model_pv_power(
         tracker_theta = surface_tilt.where((surface_azimuth >= 180),
                                            - surface_tilt)
 
-        fs_array = pvlib.shading.shaded_fraction1d(
-            solar_position.apparent_zenith,
-            solar_position.azimuth,
-            axis_azimuth=axis_azimuth,
-            shaded_row_rotation=tracker_theta,
-            collector_width=collector_width, pitch=pitch,
-            axis_tilt=axis_tilt,
-            cross_axis_slope=cross_axis_slope)
         resource_data['tracker_theta'] = tracker_theta
-    resource_data['fs_array'] = fs_array
 
     aoi = pvlib.irradiance.aoi(surface_tilt, surface_azimuth,
-                               solar_position.apparent_zenith,
-                               solar_position.azimuth)
+                               solar_position['apparent_zenith'],
+                               solar_position['azimuth'])
 
     # ========================================================================
     # DHI
@@ -353,8 +318,8 @@ def model_pv_power(
         print('calculating dhi')
         # calculate DHI with "complete sum" AKA "closure" equation:
         # DHI = GHI - DNI * cos(zenith)
-        resource_data['dhi'] = (resource_data.ghi - resource_data.dni *
-                                pvlib.tools.cosd(solar_position.zenith))
+        resource_data['dhi'] = (resource_data['ghi'] - resource_data['dni'] *
+                                pvlib.tools.cosd(solar_position['zenith']))
 
     # ========================================================================
     # Horizon shade
@@ -362,14 +327,14 @@ def model_pv_power(
     # based on https://pvlib-python.readthedocs.io/en/v0.15.0/gallery/shading/plot_simple_irradiance_adjustment_for_horizon_shading.html
     if horizon_profile is not None:
         # interpolate horizon profile at each azimuth
-        horizon_elevation_data = np.interp(solar_position.azimuth,
+        horizon_elevation_data = np.interp(solar_position['azimuth'],
                                            horizon_profile.index,
                                            horizon_profile
                                            )
         # convert back to a series
         horizon_elevation_data = pd.Series(horizon_elevation_data, times)
         # set dni to zero when the sun is below the horizon profile
-        dni_adjusted = np.where((solar_position.elevation >
+        dni_adjusted = np.where((solar_position['elevation'] >
                                  horizon_elevation_data),
                                  resource_data['dni'], 0)
         # set ghi to be equal to dhi when the sun is below the horizon profile
@@ -383,43 +348,61 @@ def model_pv_power(
     # ========================================================================
     # Modeled POA
     # ========================================================================
-    # dni
+    # dni extra, airmass
     dni_extra = pvlib.irradiance.get_extra_radiation(resource_data.index)
+    airmass = loc.get_airmass(solar_position=solar_position)
 
-    # total irradiance
-    total_irrad = pvlib.irradiance.get_total_irradiance(
-        surface_tilt=surface_tilt,
-        surface_azimuth=surface_azimuth,
-        solar_zenith=solar_position.apparent_zenith,
-        solar_azimuth=solar_position.azimuth,
-        dni=resource_data.dni,
-        ghi=resource_data.ghi,
-        dhi=resource_data.dhi,
-        dni_extra=dni_extra,
-        albedo=resource_data.albedo,
+    # setup inputs for fixed vs tracking
+    if mount_type == 'fixed':
+        tracker_theta = fixed_tilt
+        axis_azimuth = fixed_azimuth - 90
+    else:
+        tracker_theta = resource_data['tracker_theta']
+
+    # total irradiance using ants2d
+    total_irrad = pvlib.bifacial.ants2d.get_irradiance(
+        tracker_rotation=tracker_theta,
+        axis_azimuth=axis_azimuth,
+        solar_zenith=solar_position['apparent_zenith'],
+        solar_azimuth=solar_position['azimuth'],
+        gcr=gcr,
+        height=row_height_center,
+        pitch=pitch,
+        ghi=resource_data['ghi'],
+        dhi=resource_data['dhi'],
+        dni=resource_data['dni'],
+        albedo=resource_data['albedo'],
         model=default_site_transposition_model,
-    )
+        dni_extra=dni_extra,
+        airmass=airmass['airmass_relative'],
+        row_segments=1,
+        ground_segments=10,
+        axis_tilt=axis_tilt,
+        cross_axis_slope=cross_axis_slope,
+        max_rows=None,
+        return_ground_components=False)
 
-    resource_data['poa_modeled'] = total_irrad['poa_global']
+    # resource_data['poa_modeled'] = total_irrad['poa_front']
+    # shaded fraction for the whole array (all courses/strings in a row)
+    fs_array = total_irrad['shaded_fraction_front']
+    resource_data['fs_array'] = fs_array
+
+    # work backwards to unshaded direct irradiance for the whole array:
+    poa_front_direct_unshaded = total_irrad['poa_front_direct'] / (1-fs_array)
+
+    poa_front_diffuse = total_irrad['poa_front_diffuse']
 
     # ========================================================================
     # Handle measured POA, get diffuse and direct ready
     # ========================================================================
     if use_measured_poa is True:
-        poa_total_without_direct_shade = resource_data.poa
+        poa_front_total_without_direct_shade = resource_data.poa
         irrad_dirint = pvlib.irradiance.gti_dirint(
-            poa_total_without_direct_shade, aoi,
-            solar_position.apparent_zenith, solar_position.azimuth,
+            poa_front_total_without_direct_shade, aoi,
+            solar_position['apparent_zenith'], solar_position['azimuth'],
             times, surface_tilt, surface_azimuth)
-        poa_direct_unshaded = irrad_dirint['dni']  # output of gti_dirint
-        poa_diffuse_unshaded = irrad_dirint['dhi']  # output of gti_dirint
-    else:
-        # work backwards to unshaded direct irradiance for the array:
-        # poa_direct_unshaded = total_irrad.poa_direct / (1-fs_array)
-        # !!! get_total_irradiance doesn't include shade like infinite_sheds,
-        # so no correction needed!!!
-        poa_direct_unshaded = total_irrad['poa_direct']
-        poa_diffuse_unshaded = total_irrad['poa_diffuse']
+        poa_front_direct_unshaded = irrad_dirint['dni']  # output of gti_dirint
+        poa_front_diffuse = irrad_dirint['dhi']  # output of gti_dirint
 
     # ========================================================================
     # IAM and Spectral correction
@@ -431,39 +414,38 @@ def model_pv_power(
 
     # spectral modifier for cdte
     if cell_type == 'thin-film_cdte':
-        airmass = loc.get_airmass(solar_position=solar_position)
         if 'precipitable_water' not in resource_data.columns:
             if (('temp_air' in resource_data.columns) &
                ('relative_humidity' in resource_data.columns)):
                 resource_data['precipitable_water'] = \
                     pvlib.atmosphere.gueymard94_pw(
-                        temp_air=resource_data.temp_air,
-                        relative_humidity=resource_data.relative_humidity)
+                        temp_air=resource_data['temp_air'],
+                        relative_humidity=resource_data['relative_humidity'])
             else:
                 resource_data['precipitable_water'] = 1
         spectral_modifier = pvlib.spectrum.spectral_factor_firstsolar(
-            precipitable_water=resource_data.precipitable_water,
-            airmass_absolute=airmass.airmass_absolute,
+            precipitable_water=resource_data['precipitable_water'],
+            airmass_absolute=airmass['airmass_absolute'],
             module_type='cdte',
         )
 
     # apply iam
-    poa_direct_unshaded = poa_direct_unshaded * iam
+    poa_front_direct_unshaded = poa_front_direct_unshaded * iam
 
     # total poa on the front, but without direct shade impacts
     # (would be keeping diffuse impacts from infinite_sheds if we used
     # inifinite_sheds...)
-    poa_total_without_direct_shade = (poa_diffuse_unshaded +
-                                      poa_direct_unshaded)
+    poa_front_total_without_direct_shade = (
+        poa_front_diffuse + poa_front_direct_unshaded)
 
     if cell_type == 'thin-film_cdte':
-        poa_total_without_direct_shade = (poa_total_without_direct_shade *
-                                          spectral_modifier)
+        poa_front_total_without_direct_shade = (
+            poa_front_total_without_direct_shade * spectral_modifier)
 
     # set zero POA to nan to avoid divide by zero warnings
     # this might not be needed!!!
-    poa_total_without_direct_shade = (
-        poa_total_without_direct_shade.replace(0, np.nan))
+    poa_front_total_without_direct_shade = (
+        poa_front_total_without_direct_shade.replace(0, np.nan))
 
     # ========================================================================
     # Shade losses
@@ -488,21 +470,22 @@ def model_pv_power(
     # shaded fraction for each course/string going up the row
     fs = shade_fractions(fs_array, eff_row_side_num_mods)
     # total POA *with* direct shade impacts
-    poa_total_with_direct_shade = (((1-fs) * poa_direct_unshaded.values) +
-                                   total_irrad['poa_diffuse'].values)
+    poa_front_total_with_direct_shade = (((1-fs) * poa_front_direct_unshaded.values) +
+                                         total_irrad['poa_front_diffuse'].values)
     # diffuse fraction
-    fd = (total_irrad['poa_diffuse'] / total_irrad['poa_global']).values
+    fd = (total_irrad['poa_front_diffuse'] / total_irrad['poa_front']).values
 
     # calculate shade loss for each course/string
     if shade_loss_model == 'linear':
         shade_loss = fs * (1 - fd)
+        # shade_loss = 0  # ants2d already applies shading
     elif (shade_loss_model == 'non-linear_simple' or
           shade_loss_model == 'non-linear_simple_twin_module'):
         shade_loss = non_linear_shade(n_cells_up, fs, fd)
 
     # adjust irradiance based on modeled shade loss
     poa_front_effective = ((1 - shade_loss) *
-                           poa_total_without_direct_shade.values)
+                           poa_front_total_without_direct_shade.values)
 
     # ========================================================================
     # Non-linear irradiance response
@@ -534,7 +517,7 @@ def model_pv_power(
     # simpler than sapm
     t_cell_modeled = np.array([
         pvlib.temperature.faiman(
-            poa_total_with_direct_shade[n],
+            poa_front_total_with_direct_shade[n],
             resource_data['temp_air'],
             resource_data['wind_speed']).values
         for n in range(eff_row_side_num_mods)])
@@ -567,40 +550,13 @@ def model_pv_power(
     # Bifacial
     # ========================================================================
     if bifacial is True:
-        # transposition models allowed for infinite_sheds:
-        if default_site_transposition_model not in ['haydavies', 'isotropic']:
-            print('pvlib.bifacial.infinite_sheds does not currently accept'
-                  ' the ' + default_site_transposition_model + ' model.')
-            print('using haydavies instead.')
-            inf_sheds_transposition_model = 'haydavies'
-        else:
-            inf_sheds_transposition_model = default_site_transposition_model
-
-        # run infinite_sheds to get rear irradiance
-        irrad_inf_sh = pvlib.bifacial.infinite_sheds.get_irradiance(
-            surface_tilt=surface_tilt,
-            surface_azimuth=surface_azimuth,
-            solar_zenith=solar_position.apparent_zenith,
-            solar_azimuth=solar_position.azimuth,
-            gcr=gcr,
-            height=row_height_center,
-            pitch=row_pitch,
-            ghi=resource_data.ghi,
-            dhi=resource_data.dhi,
-            dni=resource_data.dni,
-            albedo=resource_data.albedo,
-            model=inf_sheds_transposition_model,
-            dni_extra=dni_extra,
-            bifaciality=bifaciality_factor,
-        )
-
         # now for the rear irradiance
-        fs_array_back = irrad_inf_sh['shaded_fraction_back']
+        fs_array_back = total_irrad['shaded_fraction_back']
         poa_back_direct_unshaded = (
-            irrad_inf_sh['poa_back_direct'] / (1-fs_array_back)
+            total_irrad['poa_back_direct'] / (1-fs_array_back)
         )
         poa_back_total_without_direct_shade = (
-            irrad_inf_sh['poa_back_diffuse'] + poa_back_direct_unshaded
+            total_irrad['poa_back_diffuse'] + poa_back_direct_unshaded
         )
         poa_back_total_without_direct_shade.replace(0, np.nan, inplace=True)
         fs_back = shade_fractions(fs_array_back, eff_row_side_num_mods)
@@ -609,7 +565,7 @@ def model_pv_power(
         #     ((1-fs_back) * poa_back_direct_unshaded.values) +
         #     irrad_inf_sh['poa_back_diffuse'].values
         # )
-        fd = (irrad_inf_sh['poa_back_diffuse'].values /
+        fd = (total_irrad['poa_back_diffuse'].values /
               poa_back_total_without_direct_shade.values)
         if shade_loss_model == 'linear':
             # shade_loss = fs * (1 - fd)
