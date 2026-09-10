@@ -54,6 +54,20 @@ See [quick_demo.ipynb](quick_demo.ipynb) and https://github.com/williamhobbs/202
  - https://github.com/williamhobbs/PVPMC_2025
  - https://github.com/williamhobbs/PVSC-2025-daily-energy-forecaster
 
+## Installation
+
+Options include (but are not limited to):
+
+```bash
+pip install git+https://github.com/williamhobbs/pv-system-model.git
+```
+
+or
+
+```bash
+pip install "pv_system_model @ https://github.com/williamhobbs/pv-system-model/archive/refs/heads/main.zip"
+```
+
 ## References
 
 [1] Anderson, K., Hansen, C., Holmgren, W., Jensen, A., Mikofski, M., and Driesse, A. “pvlib python: 2023 project update.” Journal of Open Source Software, 8(92), 5994, (2023). DOI: [http://dx.doi.org/10.21105/joss.05994](10.21105/joss.05994).
