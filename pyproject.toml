@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pv_system_model"
+version = "0.2.3"
+description = "A model for PV plants/systems based on pvlib."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name="Will Hobbs" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "pvlib >= 0.13.1",
+]
+license = "BSD-3-Clause"
+license-files = ["LICENSE*"]
+
+[project.urls]
+Homepage = "https://github.com/williamhobbs/pv-system-model"
+Issues = "https://github.com/williamhobbs/pv-system-model/issues"
